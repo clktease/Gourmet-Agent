@@ -1,0 +1,14 @@
+# 核心 UI 框架
+streamlit>=1.30.0
+
+# 網路請求與環境變數管理
+requests
+python-dotenv
+
+# LangChain 與 OpenAI 整合
+langchain>=0.2.0
+langchain-openai>=0.1.0
+langchain-core>=0.2.0
+
+# Agent 工作流框架
+langgraph>=0.0.30
