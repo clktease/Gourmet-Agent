@@ -1,5 +1,7 @@
 import os
+import json
 import requests
+from pathlib import Path
 from typing import List, Dict, TypedDict
 from dotenv import load_dotenv  # 新增：讀取 .env 檔案
 from langchain_openai import ChatOpenAI
@@ -23,9 +25,25 @@ class AgentState(TypedDict):
     location: str
     restaurants: List[Dict]
     final_report: str
+    min_rating: float
+
+CACHE_FILE = "restaurant_cache.json"
+
+def load_cache():
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_cache(cache_data):
+    with open(CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(cache_data, f, ensure_ascii=False, indent=2)
 
 # --- 1. 核心搜尋與過濾邏輯 ---
-def get_restaurant_data(location_query: str):
+def get_restaurant_data(location_query: str, min_rating: float = 0.0):
     """使用 SerpApi 進行兩階段搜尋"""
     if not SERP_API_KEY:
         st.error("錯誤：找不到 SERP_API_KEY，請檢查環境變數或 .env 檔案")
@@ -42,15 +60,32 @@ def get_restaurant_data(location_query: str):
     }
     
     try:
+        # Load cache
+        cache = load_cache()
+        
         search_res = requests.get(base_url, params=search_params).json()
-        places = search_res.get("local_results", [])[:5] 
+        places = search_res.get("local_results", [])[:10]  # Get slightly more to allowing filtering
         
         final_list = []
         target_keywords = ["送", "五星", "評論"]
 
         for p in places:
+            rating = p.get("rating", 0)
+            if rating < min_rating:
+                continue
+                
+            if len(final_list) >= 5: # Limit to 5 results after filtering
+                break
+
             name = p.get("title")
             data_id = p.get("data_id")
+            
+            # Check cache
+            if data_id in cache:
+                st.write(f"🔄 從快取載入：{name}...")
+                final_list.append(cache[data_id])
+                continue
+
             st.write(f"🔍 正在定向檢索：{name}...")
 
             keyword_buckets = {}
@@ -67,14 +102,20 @@ def get_restaurant_data(location_query: str):
                 snippets = [r.get("snippet") for r in rev_res.get("reviews", []) if r.get("snippet")]
                 keyword_buckets[kw] = snippets
 
-            final_list.append({
+            restaurant_info = {
                 "name": name,
                 "category": p.get("type", "美食"),
-                "rating": p.get("rating"),
+                "rating": rating,
                 "price": p.get("price", "中價位"),
                 "booking": p.get("website", "現場排隊"),
                 "keyword_reviews": keyword_buckets
-            })
+            }
+            
+            final_list.append(restaurant_info)
+            
+            # Update cache
+            cache[data_id] = restaurant_info
+            save_cache(cache)
             
         return final_list
     except Exception as e:
@@ -83,7 +124,8 @@ def get_restaurant_data(location_query: str):
 
 # --- 2. LangGraph 節點定義 ---
 def search_node(state: AgentState):
-    data = get_restaurant_data(state['location'])
+    min_rating = state.get('min_rating', 0.0)
+    data = get_restaurant_data(state['location'], min_rating=min_rating)
     return {"restaurants": data}
 
 def analyze_node(state: AgentState):
@@ -123,19 +165,20 @@ workflow.add_edge("analyze", END)
 app = workflow.compile()
 
 # --- 4. Streamlit UI ---
-st.set_page_config(page_title="美食真探 5.0", layout="wide")
-st.title("🕵️ 美食真探：定向關鍵字偵察")
+st.set_page_config(page_title="美食搜尋專家", layout="wide")
+st.title("🕵️ 美食搜尋專家：定向關鍵字偵察")
 st.markdown("---")
 
 if not OPENAI_API_KEY or not SERP_API_KEY:
     st.warning("⚠️ 請在 .env 檔案或環境變數中設定 API Key 以利運行。")
 
 loc = st.text_input("搜尋中心點 (例如：中山捷運站)", value="中山捷運站")
+min_rating_input = st.slider("最低評分標準", min_value=0.0, max_value=5.0, value=3.5, step=0.1)
 
 if st.button("啟動深挖探針"):
     with st.spinner("正在執行 5x3 定向過濾分析中..."):
         try:
-            result = app.invoke({"location": loc, "restaurants": []})
+            result = app.invoke({"location": loc, "restaurants": [], "min_rating": min_rating_input})
             st.success(f"🔍 偵察完成！以下是 {loc} 的深度分析報告：")
             st.markdown(result["final_report"])
             
