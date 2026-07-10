@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>洗評論過濾 Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #12151b;
+    --surface-2: #181c24;
+    --surface-3: #1f2430;
+    --hairline: #262b36;
+    --hairline-strong: #333a48;
+    --ink: #edf0f4;
+    --ink-dim: #8991a3;
+    --ink-faint: #565e6d;
+    --accent: #00c2b2;
+    --accent-ink: #06181a;
+    --genuine: #35d38a;
+    --suspicious: #f2b544;
+    --fake: #ff5b74;
+    --unknown: #6b7280;
+
+    --font-display: 'Big Shoulders Display', sans-serif;
+    --font-body: 'Noto Sans TC', -apple-system, "Segoe UI", sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--ink);
+    position: relative;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 46px 46px;
+  }
+  header, main { position: relative; z-index: 1; }
+
+  a { color: var(--accent); }
+
+  /* ── header ── */
+  header {
+    padding: 26px 28px 0;
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 8px;
+  }
+  header h1 {
+    margin: 0 0 8px;
+    font-family: var(--font-body);
+    font-weight: 900;
+    font-size: clamp(22px, 3.4vw, 30px);
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  header p.sub { margin: 0 0 18px; color: var(--ink-dim); font-size: 13px; max-width: 640px; line-height: 1.6; }
+  .line-strip {
+    height: 4px;
+    background: linear-gradient(90deg,
+      #e3002c 0 16.66%, #008659 16.66% 33.33%, #0070bd 33.33% 50%,
+      #f8b61c 50% 66.66%, #c48c31 66.66% 83.33%, #ffdb00 83.33% 100%);
+  }
+
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 20px 60px;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  section.block { margin-bottom: 30px; }
+  section.block h2 {
+    font-size: 14px;
+    font-weight: 700;
+    margin: 0 0 14px;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    letter-spacing: 0.01em;
+  }
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--ink-faint);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin: 28px 0;
+  }
+  .divider::before, .divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--hairline);
+  }
+
+  /* ── inputs / buttons ── */
+  .search-bar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  input[type=text], input[type=number] {
+    padding: 11px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--hairline);
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 14px;
+    font-family: var(--font-body);
+    transition: border-color .15s;
+  }
+  input[type=text]:focus, input[type=number]:focus { border-color: var(--accent); }
+  .search-bar input[type=text] { flex: 1; min-width: 220px; }
+  .search-bar input[type=number] { width: 130px; }
+
+  button { font-family: var(--font-body); }
+  .btn-primary {
+    padding: 11px 22px;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 14px;
+    transition: filter .15s, transform .05s;
+  }
+  .btn-primary:hover { filter: brightness(1.1); }
+  .btn-primary:active { transform: scale(0.97); }
+  .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
+  .search-bar button { padding: 11px 22px; border-radius: 8px; border: none; background: var(--accent); color: var(--accent-ink); font-weight: 700; cursor: pointer; font-size: 14px; transition: filter .15s, transform .05s; }
+  .search-bar button:hover { filter: brightness(1.1); }
+  .search-bar button:active { transform: scale(0.97); }
+  .search-bar button:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
+
+  #log {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-dim);
+    max-height: 140px;
+    overflow-y: auto;
+    margin-bottom: 20px;
+    display: none;
+  }
+  #log div { padding: 2px 0; }
+
+  #business-card {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 18px;
+    display: none;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  #business-card h2 { margin: 0 0 4px; font-size: 17px; font-weight: 700; flex: 1 0 auto; }
+  #business-card .addr { color: var(--ink-dim); font-size: 13px; }
+  #business-card > div:first-of-type { flex: 1; min-width: 200px; }
+
+  /* ── stats ── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin-bottom: 20px;
+    display: none;
+  }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 14px 10px;
+    text-align: center;
+  }
+  .stat .num {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 22px;
+  }
+  .stat .label { font-size: 11.5px; color: var(--ink-dim); margin-top: 4px; }
+  .stat.genuine .num { color: var(--genuine); }
+  .stat.suspicious .num { color: var(--suspicious); }
+  .stat.fake .num { color: var(--fake); }
+  .stat.trust .num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    box-shadow: inset 0 0 0 3px rgba(0,194,178,0.12);
+    color: var(--accent);
+    font-size: 17px;
+  }
+
+  .filters {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+    display: none;
+  }
+  .filters button {
+    padding: 7px 15px;
+    border-radius: 20px;
+    border: 1px solid var(--hairline);
+    background: var(--surface);
+    color: var(--ink-dim);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  .filters button:hover { border-color: var(--hairline-strong); }
+  .filters button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 700;
+  }
+
+  /* ── review card + verdict stamp ── */
+  .review {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-left: 2px solid var(--unknown);
+    border-radius: 8px;
+    padding: 16px 16px 12px;
+    margin: 18px 0 10px;
+  }
+  .review.genuine { border-left-color: var(--genuine); }
+  .review.suspicious { border-left-color: var(--suspicious); }
+  .review.fake { border-left-color: var(--fake); }
+
+  .review-top {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+    padding-right: 70px;
+  }
+  .review-author { font-weight: 700; font-size: 13.5px; }
+  .review-meta { color: var(--ink-dim); font-size: 12px; }
+
+  .badge {
+    position: absolute;
+    top: -12px;
+    right: 14px;
+    padding: 4px 11px;
+    border-radius: 4px;
+    background: var(--surface);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transform: rotate(-5deg);
+    animation: stampIn .28s cubic-bezier(.2,.8,.3,1.2) both;
+  }
+  @keyframes stampIn {
+    0% { transform: rotate(-5deg) scale(1.5); opacity: 0; }
+    60% { transform: rotate(-5deg) scale(0.92); opacity: 1; }
+    100% { transform: rotate(-5deg) scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) { .badge { animation: none; } }
+  .badge.genuine { color: var(--genuine); border: 1.5px solid var(--genuine); box-shadow: inset 0 0 0 2px rgba(53,211,138,0.18); }
+  .badge.suspicious { color: var(--suspicious); border: 1.5px solid var(--suspicious); box-shadow: inset 0 0 0 2px rgba(242,181,68,0.18); }
+  .badge.fake { color: var(--fake); border: 1.5px solid var(--fake); box-shadow: inset 0 0 0 2px rgba(255,91,116,0.18); }
+  .badge.unknown { color: var(--unknown); border: 1.5px solid var(--unknown); box-shadow: inset 0 0 0 2px rgba(107,114,128,0.18); }
+
+  .review-text { font-size: 14px; line-height: 1.6; margin: 6px 0; }
+  .review-reason { font-size: 12.5px; color: var(--ink-dim); font-style: italic; }
+  #empty-state { color: var(--ink-dim); font-size: 13px; margin-top: 12px; }
+
+  /* ── MRT schematic map ── */
+  .line-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .line-pill {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 700;
+    color: white;
+    opacity: 0.55;
+    transition: opacity .15s, transform .1s;
+  }
+  .line-pill:hover { opacity: 0.85; }
+  .line-pill.active { opacity: 1; border-color: var(--ink); box-shadow: 0 0 0 2px rgba(255,255,255,0.08); }
+  .line-pill .count { font-family: var(--font-mono); font-weight: 400; opacity: 0.85; font-size: 10.5px; }
+
+  #line-stations-wrap {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 6px 4px;
+  }
+  .mrt-line-row { display: flex; align-items: center; padding: 4px 0; }
+  .mrt-line-label {
+    flex: 0 0 92px;
+    font-size: 12.5px;
+    font-weight: 700;
+    padding-left: 10px;
+    white-space: nowrap;
+  }
+  .mrt-line-track {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    overflow-x: auto;
+    padding: 20px 14px 10px;
+    flex: 1;
+  }
+  .mrt-line-track::before {
+    content: "";
+    position: absolute;
+    left: 14px; right: 14px; top: 25px;
+    height: 3px;
+    background: var(--line-color);
+    opacity: 0.7;
+    z-index: 0;
+  }
+  .mrt-station {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    flex: 0 0 auto;
+    width: 62px;
+    padding: 0;
+  }
+  .mrt-station .dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--surface-2); border: 2.5px solid var(--line-color);
+  }
+  .mrt-station.interchange .dot { width: 16px; height: 16px; background: var(--ink); }
+  .mrt-station .code {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--ink-faint);
+    letter-spacing: 0.04em;
+  }
+  .mrt-station .label {
+    font-size: 10.5px; color: var(--ink-dim); text-align: center; line-height: 1.25;
+  }
+  .mrt-station.selected .dot { background: var(--accent); border-color: var(--accent); }
+  .mrt-station.selected .label { color: var(--ink); font-weight: 700; }
+  .mrt-station.selected .code { color: var(--accent); }
+
+  #station-panel {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 12px 16px;
+  }
+  #station-panel .station-name { font-weight: 700; font-size: 14px; }
+  #station-panel label { font-size: 12.5px; color: var(--ink-dim); display: flex; align-items: center; gap: 6px; }
+  #station-panel input {
+    width: 70px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--hairline);
+    background: var(--surface-2);
+    color: var(--ink);
+    font-size: 13px;
+  }
+  #station-panel button {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 13px;
+    transition: filter .15s;
+  }
+  #station-panel button:hover { filter: brightness(1.1); }
+  #nearby-log { color: var(--ink-dim); font-family: var(--font-mono); font-size: 12px; margin: 12px 0; }
+
+  .place-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 12px;
+  }
+  .place-card {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    padding: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow: hidden;
+    transition: transform .15s, box-shadow .15s, border-color .15s;
+  }
+  .place-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--card-line, var(--accent));
+  }
+  .place-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--hairline-strong);
+    box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+  }
+  .place-thumb {
+    height: 100px;
+    border-radius: 7px;
+    background-color: var(--surface-2);
+    background-size: cover;
+    background-position: center;
+  }
+  .place-title { font-weight: 700; font-size: 13.5px; }
+  .place-meta, .place-addr { font-size: 12px; color: var(--ink-dim); }
+  .place-meta { font-family: var(--font-mono); }
+  .place-analyze-btn {
+    margin-top: 4px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .place-analyze-btn:hover { background: var(--accent); color: var(--accent-ink); }
+
+  .place-status { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-dim); margin-top: 2px; }
+  .place-status.genuine { color: var(--genuine); font-weight: 700; }
+  .place-status.suspicious { color: var(--suspicious); font-weight: 700; }
+  .place-status.fake { color: var(--fake); font-weight: 700; }
+
+  /* ── batch report ── */
+  #batch-report { display: none; margin-top: 26px; }
+  .batch-overview {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .report-row {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+  .report-row-toggle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    cursor: pointer;
+    flex-wrap: wrap;
+    transition: background .15s;
+  }
+  .report-row-toggle:hover { background: var(--surface-3); }
+  .report-rank { font-family: var(--font-mono); color: var(--ink-faint); font-size: 12px; width: 22px; }
+  .report-title { font-weight: 700; font-size: 14px; flex: 1; min-width: 120px; }
+  .report-badge {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 20px;
+    background: rgba(107,114,128,0.15);
+    color: var(--unknown);
+  }
+  .report-badge.genuine { background: rgba(53,211,138,0.15); color: var(--genuine); }
+  .report-badge.suspicious { background: rgba(242,181,68,0.15); color: var(--suspicious); }
+  .report-badge.fake { background: rgba(255,91,116,0.15); color: var(--fake); }
+  .report-counts, .report-google { font-size: 12px; color: var(--ink-dim); font-family: var(--font-mono); }
+  .report-row-detail { display: none; padding: 4px 16px 14px; border-top: 1px solid var(--hairline); }
+  .report-row-detail .review { margin-top: 10px; }
+
+  #refresh-btn {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--accent);
+    background: none;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 6px 11px;
+    cursor: pointer;
+    display: none;
+  }
+  #refresh-btn:hover { background: var(--accent); color: var(--accent-ink); }
+
+  footer {
+    max-width: 1100px;
+    margin: 20px auto 0;
+    padding: 20px 20px 40px;
+    position: relative;
+    z-index: 1;
+  }
+  footer p {
+    color: var(--ink-faint);
+    font-size: 11.5px;
+    font-family: var(--font-mono);
+    text-align: center;
+    margin: 14px 0 0;
+  }
+
+  @media (max-width: 640px) {
+    header { padding: 20px 18px 0; }
+    main { padding: 20px 14px 50px; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .batch-overview { grid-template-columns: 1fr; }
+    #station-panel { flex-direction: column; align-items: flex-start; }
+    .search-bar { flex-direction: column; }
+    .search-bar input, .search-bar button { width: 100%; }
+    .review-top { padding-right: 0; }
+    .badge { position: static; display: inline-block; margin-bottom: 8px; transform: rotate(0); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Review Authenticity Audit · 台北捷運美食稽核</div>
+  <h1>🔍 洗評論過濾 Agent</h1>
+  <p class="sub">選捷運站找附近美食，或直接輸入商家名稱 → SerpAPI 抓取 Google 評論 → LLM 逐則判斷真偽</p>
+</header>
+<div class="line-strip"></div>
+
+<main>
+  <section class="block">
+    <h2>🚇 依捷運站找美食</h2>
+    <div class="line-picker" id="line-picker"></div>
+    <div id="line-stations-wrap">
+      <div class="mrt-line-row" id="line-stations-row"></div>
+    </div>
+
+    <div id="station-panel">
+      <span>已選：</span>
+      <span class="station-name" id="station-name"></span>
+      <label>最低評分 <input type="number" id="min-rating" value="4.5" min="0" max="5" step="0.1" /></label>
+      <label>最高評分 <input type="number" id="max-rating" value="4.9" min="0" max="5" step="0.1" title="4.9~5.0 常見洗評論灌高分，可調低排除" /></label>
+      <label>取前 N 間 <input type="number" id="nearby-limit" value="10" min="1" max="30" /></label>
+      <button id="nearby-search-btn">搜尋附近美食</button>
+    </div>
+    <div id="nearby-log"></div>
+    <div class="place-list" id="nearby-results"></div>
+
+    <div id="batch-report">
+      <h2>📋 洗評論分析報告</h2>
+      <div class="batch-overview" id="batch-overview"></div>
+      <div id="batch-report-body"></div>
+    </div>
+  </section>
+
+  <div class="divider">或直接輸入商家名稱</div>
+
+  <div class="search-bar">
+    <input type="text" id="query" placeholder="輸入商家名稱，例如：鼎泰豐 信義店" />
+    <input type="number" id="max_reviews" value="60" min="5" max="300" title="最多抓取幾則評論" />
+    <button id="analyze-btn">分析</button>
+  </div>
+
+  <div id="log"></div>
+
+  <div id="business-card">
+    <div>
+      <h2 id="biz-title"></h2>
+      <div class="addr" id="biz-addr"></div>
+    </div>
+    <button id="refresh-btn">重新分析（略過快取）</button>
+  </div>
+
+  <div class="stats" id="stats">
+    <div class="stat trust"><div class="num" id="stat-trust">-</div><div class="label">可信度</div></div>
+    <div class="stat"><div class="num" id="stat-total">0</div><div class="label">總評論數</div></div>
+    <div class="stat genuine"><div class="num" id="stat-genuine">0</div><div class="label">真實</div></div>
+    <div class="stat suspicious"><div class="num" id="stat-suspicious">0</div><div class="label">可疑</div></div>
+    <div class="stat fake"><div class="num" id="stat-fake">0</div><div class="label">疑似洗評</div></div>
+  </div>
+
+  <div class="filters" id="filters">
+    <button data-filter="all" class="active">全部</button>
+    <button data-filter="genuine">只看真實</button>
+    <button data-filter="suspicious">只看可疑</button>
+    <button data-filter="fake">只看疑似洗評</button>
+  </div>
+
+  <div id="results"></div>
+  <div id="empty-state"></div>
+</main>
+
+<footer>
+  <div class="line-strip"></div>
+  <p>資料來源 Google Maps（SerpAPI）· AI 研判 GPT-5.2 · 結果僅供參考，不代表商家實際經營狀況</p>
+</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const btn = $("analyze-btn");
+const logEl = $("log");
+let allReviews = [];
+let currentFilter = "all";
+let lastQuery = null;
+let lastDataId = null;
+
+function log(msg) {
+  logEl.style.display = "block";
+  const line = document.createElement("div");
+  line.textContent = msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function resetUI() {
+  logEl.innerHTML = "";
+  logEl.style.display = "none";
+  $("business-card").style.display = "none";
+  $("refresh-btn").style.display = "none";
+  $("stats").style.display = "none";
+  $("filters").style.display = "none";
+  $("results").innerHTML = "";
+  $("empty-state").textContent = "";
+  allReviews = [];
+}
+
+function renderBusiness(business) {
+  $("biz-title").textContent = business.title || "";
+  $("biz-addr").textContent = business.address || "";
+  $("business-card").style.display = "flex";
+}
+
+function renderStats(summary) {
+  $("stat-trust").textContent = summary.trust_score !== null ? Math.round(summary.trust_score * 100) + "%" : "-";
+  $("stat-total").textContent = summary.total;
+  $("stat-genuine").textContent = summary.genuine;
+  $("stat-suspicious").textContent = summary.suspicious;
+  $("stat-fake").textContent = summary.fake;
+  $("stats").style.display = "grid";
+  $("filters").style.display = "flex";
+}
+
+function reviewHTML(r) {
+  const verdict = r.verdict || "unknown";
+  const stars = r.rating ? "★".repeat(Math.round(r.rating)) : "";
+  return `
+    <div class="review ${verdict}">
+      <span class="badge ${verdict}">${verdict}</span>
+      <div class="review-top">
+        <span class="review-author">${escapeHtml(r.author)}</span>
+        <span class="review-meta">${stars} · ${escapeHtml(r.date || "")}</span>
+      </div>
+      <div class="review-text">${escapeHtml(r.text)}</div>
+      <div class="review-reason">${escapeHtml(r.reason || "")}</div>
+    </div>
+  `;
+}
+
+function escapeHtml(s) {
+  const div = document.createElement("div");
+  div.textContent = s ?? "";
+  return div.innerHTML;
+}
+
+function renderReviews() {
+  const filtered = currentFilter === "all"
+    ? allReviews
+    : allReviews.filter(r => r.verdict === currentFilter);
+  $("results").innerHTML = filtered.map(reviewHTML).join("");
+  $("empty-state").textContent = filtered.length === 0 ? "沒有符合條件的評論" : "";
+}
+
+document.querySelectorAll("#filters button").forEach(b => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll("#filters button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    currentFilter = b.dataset.filter;
+    renderReviews();
+  });
+});
+
+function runAnalysis(query, dataId, forceRefresh = false) {
+  if (!query && !dataId) return;
+  lastQuery = query;
+  lastDataId = dataId;
+  const maxReviews = parseInt($("max_reviews").value, 10) || 60;
+
+  resetUI();
+  btn.disabled = true;
+  btn.textContent = "分析中...";
+  $("business-card").scrollIntoView({ behavior: "smooth", block: "start" });
+
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${proto}//${location.host}/ws/analyze`);
+
+  ws.onopen = () => ws.send(JSON.stringify({
+    query, max_reviews: maxReviews, data_id: dataId, force_refresh: forceRefresh,
+  }));
+
+  ws.onmessage = (evt) => {
+    const msg = JSON.parse(evt.data);
+    if (msg.stage === "error") {
+      log("❌ " + msg.message);
+      btn.disabled = false;
+      btn.textContent = "分析";
+      return;
+    }
+    if (msg.stage === "search_done" || msg.stage === "cache_hit") {
+      renderBusiness(msg.business);
+    }
+    if (msg.message) {
+      log(msg.message);
+    }
+    if (msg.stage === "result") {
+      allReviews = msg.data.reviews;
+      renderStats(msg.data.summary);
+      renderReviews();
+      $("refresh-btn").style.display = "inline-block";
+      btn.disabled = false;
+      btn.textContent = "分析";
+      ws.close();
+    }
+  };
+
+  ws.onerror = () => {
+    log("❌ WebSocket 連線發生錯誤");
+    btn.disabled = false;
+    btn.textContent = "分析";
+  };
+}
+
+btn.addEventListener("click", () => {
+  const query = $("query").value.trim();
+  if (!query) return;
+  runAnalysis(query, null);
+});
+
+$("query").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") btn.click();
+});
+
+$("refresh-btn").addEventListener("click", () => {
+  if (lastQuery || lastDataId) runAnalysis(lastQuery, lastDataId, true);
+});
+
+// ── MRT schematic map (select a line, then a station on that line) ─────────
+let mrtLines = [];
+let stationLineCount = {};
+let selectedLineId = null;
+let selectedStation = null;
+let nearbyPlaces = [];
+
+async function loadMrtLines() {
+  try {
+    const res = await fetch("/api/mrt/lines");
+    const data = await res.json();
+    mrtLines = data.lines;
+    stationLineCount = {};
+    mrtLines.forEach(line => line.stations.forEach(st => {
+      stationLineCount[st.name] = (stationLineCount[st.name] || 0) + 1;
+    }));
+    renderLinePicker();
+  } catch (e) {
+    $("line-picker").textContent = "捷運路線載入失敗";
+  }
+}
+
+function renderLinePicker() {
+  $("line-picker").innerHTML = mrtLines.map(line => `
+    <button class="line-pill ${selectedLineId === line.id ? "active" : ""}"
+            style="background:${line.color}" data-line="${line.id}">
+      ${escapeHtml(line.name)} <span class="count">${line.stations.length}站</span>
+    </button>
+  `).join("");
+
+  $("line-picker").querySelectorAll(".line-pill").forEach(b => {
+    b.addEventListener("click", () => selectLine(b.dataset.line));
+  });
+}
+
+function selectLine(lineId) {
+  selectedLineId = lineId;
+  renderLinePicker();
+  renderLineStations();
+}
+
+function renderLineStations() {
+  const line = mrtLines.find(l => l.id === selectedLineId);
+  if (!line) return;
+
+  $("line-stations-wrap").style.display = "block";
+  $("line-stations-row").innerHTML = `
+    <div class="mrt-line-label" style="color:${line.color}">${escapeHtml(line.name)}</div>
+    <div class="mrt-line-track" style="--line-color:${line.color}">
+      ${line.stations.map(st => `
+        <button class="mrt-station ${stationLineCount[st.name] > 1 ? "interchange" : ""} ${selectedStation === st.name ? "selected" : ""}"
+                data-station="${escapeHtml(st.name)}" title="${escapeHtml(st.code)} ${escapeHtml(st.name)}">
+          <span class="dot"></span>
+          <span class="code">${escapeHtml(st.code)}</span>
+          <span class="label">${escapeHtml(st.name)}</span>
+        </button>
+      `).join("")}
+    </div>
+  `;
+
+  $("line-stations-row").querySelectorAll(".mrt-station").forEach(b => {
+    b.addEventListener("click", () => selectStation(b.dataset.station));
+  });
+}
+
+function selectStation(name) {
+  selectedStation = name;
+  renderLineStations();
+  $("station-panel").style.display = "flex";
+  $("station-name").textContent = name;
+  $("nearby-results").innerHTML = "";
+  $("nearby-log").textContent = "";
+  nearbyPlaces = [];
+}
+
+function placeCardHTML(p, lineColor) {
+  const rating = p.rating != null ? p.rating.toFixed(1) : "-";
+  const bg = p.thumbnail ? `background-image:url('${p.thumbnail}')` : "";
+  return `
+    <div class="place-card" data-id="${escapeHtml(p.data_id)}" style="--card-line:${lineColor || "var(--accent)"}">
+      <div class="place-thumb" style="${bg}"></div>
+      <div class="place-title">${escapeHtml(p.title)}</div>
+      <div class="place-meta">⭐ ${rating}（${p.reviews_count ?? 0} 則）${p.price ? " · " + escapeHtml(p.price) : ""}</div>
+      <div class="place-addr">${escapeHtml(p.address || "")}</div>
+      <div class="place-status" data-status>⏳ 等待分析</div>
+    </div>
+  `;
+}
+
+function trustClass(score) {
+  if (score === null || score === undefined) return "";
+  if (score >= 0.8) return "genuine";
+  if (score >= 0.5) return "suspicious";
+  return "fake";
+}
+
+function updatePlaceStatus(dataId, text, cls) {
+  const card = $("nearby-results").querySelector(`.place-card[data-id="${dataId}"]`);
+  if (!card) return;
+  const el = card.querySelector("[data-status]");
+  el.textContent = text;
+  el.className = "place-status" + (cls ? " " + cls : "");
+}
+
+$("nearby-search-btn").addEventListener("click", async () => {
+  if (!selectedStation) return;
+  const minRating = parseFloat($("min-rating").value) || 0;
+  const maxRating = parseFloat($("max-rating").value) || 5;
+  const limit = parseInt($("nearby-limit").value, 10) || 10;
+  const line = mrtLines.find(l => l.id === selectedLineId);
+
+  $("nearby-log").textContent = "搜尋中...";
+  $("nearby-results").innerHTML = "";
+  $("batch-report").style.display = "none";
+
+  try {
+    const params = new URLSearchParams({ station: selectedStation, min_rating: minRating, max_rating: maxRating, limit });
+    const res = await fetch(`/api/mrt/nearby?${params.toString()}`);
+    const data = await res.json();
+    if (data.error) {
+      $("nearby-log").textContent = "❌ " + data.error;
+      return;
+    }
+    nearbyPlaces = data.places;
+    $("nearby-results").innerHTML = nearbyPlaces.map(p => placeCardHTML(p, line && line.color)).join("");
+
+    if (nearbyPlaces.length === 0) {
+      $("nearby-log").textContent = `沒有符合條件的餐廳（評分 ${minRating} ~ ${maxRating}）`;
+      return;
+    }
+    runBatchAnalysis(nearbyPlaces);
+  } catch (e) {
+    $("nearby-log").textContent = "❌ 搜尋失敗: " + e;
+  }
+});
+
+function runBatchAnalysis(places) {
+  const maxReviews = parseInt($("max_reviews").value, 10) || 60;
+  $("nearby-log").textContent = `找到 ${places.length} 間餐廳，開始逐間分析評論...`;
+
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${proto}//${location.host}/ws/analyze_batch`);
+
+  ws.onopen = () => ws.send(JSON.stringify({
+    places: places.map(p => ({ title: p.title, data_id: p.data_id })),
+    max_reviews: maxReviews,
+  }));
+
+  ws.onmessage = (evt) => {
+    const msg = JSON.parse(evt.data);
+
+    if (msg.stage === "error") {
+      $("nearby-log").textContent = "❌ " + msg.message;
+      return;
+    }
+
+    if (msg.business_index !== undefined) {
+      const place = places[msg.business_index];
+      if (place) {
+        if (msg.stage === "fetch") {
+          updatePlaceStatus(place.data_id, "抓取評論中...");
+        } else if (msg.stage === "classify") {
+          updatePlaceStatus(place.data_id, `分類中 ${msg.done}/${msg.total}`);
+        } else if (msg.stage === "cache_hit") {
+          updatePlaceStatus(place.data_id, "讀取快取結果...");
+        } else if (msg.stage === "done" && msg.summary) {
+          const score = msg.summary.trust_score;
+          const pct = score != null ? Math.round(score * 100) + "%" : "-";
+          updatePlaceStatus(place.data_id, `可信度 ${pct}`, trustClass(score));
+        }
+      }
+    }
+
+    if (msg.stage === "business_done") {
+      $("nearby-log").textContent = `分析中... 已完成 ${msg.done}/${msg.total} 間`;
+    }
+
+    if (msg.stage === "batch_result") {
+      $("nearby-log").textContent = `全部完成，共分析 ${places.length} 間餐廳`;
+      renderBatchReport(msg.data);
+      ws.close();
+    }
+  };
+
+  ws.onerror = () => {
+    $("nearby-log").textContent = "❌ WebSocket 連線發生錯誤";
+  };
+}
+
+function renderBatchReport(report) {
+  const ov = report.overview;
+  $("batch-report").style.display = "block";
+  $("batch-overview").innerHTML = `
+    <div class="stat"><div class="num">${ov.total_restaurants}</div><div class="label">分析餐廳數</div></div>
+    <div class="stat trust"><div class="num">${ov.avg_trust_score != null ? Math.round(ov.avg_trust_score * 100) + "%" : "-"}</div><div class="label">平均可信度</div></div>
+    <div class="stat fake"><div class="num">${ov.flagged_count}</div><div class="label">疑似洗評論店家</div></div>
+  `;
+  $("batch-report-body").innerHTML = report.restaurants.map(reportRowHTML).join("");
+  $("batch-report-body").querySelectorAll(".report-row-toggle").forEach(el => {
+    el.addEventListener("click", () => {
+      const detail = el.parentElement.querySelector(".report-row-detail");
+      detail.style.display = detail.style.display === "block" ? "none" : "block";
+    });
+  });
+}
+
+function reportRowHTML(r, idx) {
+  const score = r.summary.trust_score;
+  const pct = score != null ? Math.round(score * 100) + "%" : "-";
+  const cls = trustClass(score);
+  return `
+    <div class="report-row">
+      <div class="report-row-toggle">
+        <span class="report-rank">#${idx + 1}</span>
+        <span class="report-title">${escapeHtml(r.title)}</span>
+        <span class="report-badge ${cls}">可信度 ${pct}</span>
+        <span class="report-counts">真實 ${r.summary.genuine}・可疑 ${r.summary.suspicious}・洗評 ${r.summary.fake}</span>
+        <span class="report-google">Google ${r.google_rating ?? "-"}★</span>
+      </div>
+      <div class="report-row-detail">
+        <div class="addr" style="margin-bottom:8px;">${escapeHtml(r.address || "")}</div>
+        ${r.reviews.map(reviewHTML).join("")}
+      </div>
+    </div>
+  `;
+}
+
+loadMrtLines();
+</script>
+
+</body>
+</html>

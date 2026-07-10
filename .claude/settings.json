@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wsl.exe --status)",
+      "Bash(wsl.exe -l -v)",
+      "Bash(wsl.exe -d Ubuntu-20.04 -e /home/clk/anaconda3/envs/stock-agent/bin/python --version)",
+      "Bash(wsl.exe -d Ubuntu-20.04 -e ls /home/clk/anaconda3/envs/stock-agent/bin/)",
+      "Bash(MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-20.04 -e /home/clk/anaconda3/envs/stock-agent/bin/python --version)",
+      "Bash(MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-20.04 -e bash -lc 'ls /mnt/f/deep_agent 2>&1 | head -5')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-20.04 -e /home/clk/anaconda3/envs/stock-agent/bin/python -c \"import fastapi, sqlalchemy, pydantic; print\\('fastapi', fastapi.__version__\\); print\\('sqlalchemy', sqlalchemy.__version__\\)\")",
+      "Read(//mnt/f/**)",
+      "Bash(MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-20.04 -e bash -lc 'cd /mnt/f/deep_agent && /home/clk/anaconda3/envs/stock-agent/bin/python -c \"import db; db.init_db\\(\\); print\\(db.review_stats\\(\\)\\)\"')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-20.04 -e bash -lc 'cd /mnt/f/deep_agent && /home/clk/anaconda3/envs/stock-agent/bin/python -c \"import influencer_tracking as it; print\\(it.AlertJudgement\\); print\\(it.classify_alert_relevance\\)\"')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-20.04 -e bash -lc 'cd /mnt/f/deep_agent && /home/clk/anaconda3/envs/stock-agent/bin/python -c \"import ast; ast.parse\\(open\\(\\\\\"web_server.py\\\\\", encoding=\\\\\"utf-8\\\\\"\\).read\\(\\)\\)\" && echo SYNTAX_OK')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-20.04 -e bash -lc 'cd /mnt/f/deep_agent && /home/clk/anaconda3/envs/stock-agent/bin/python -c \"import deepagents, langgraph, apscheduler, langchain, langchain_community; print\\(\\\\\"deps ok\\\\\"\\)\"')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-20.04 -e bash -lc 'cd /mnt/f/deep_agent && /home/clk/anaconda3/envs/stock-agent/bin/python -c \"import web_server; print\\(\\\\\"web_server imported OK\\\\\"\\); print\\([r.path for r in web_server.app.routes if \\\\\"review\\\\\" in r.path]\\)\"')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-20.04 -e bash -lc 'cd /mnt/f/deep_agent && nohup /home/clk/anaconda3/envs/stock-agent/bin/python -m uvicorn web_server:app --host 127.0.0.1 --port 8099 > /tmp/uvicorn_review_test.log 2>&1 & echo $! > /tmp/uvicorn_review_test.pid; sleep 5; cat /tmp/uvicorn_review_test.log')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-20.04 -e bash -lc ' *)",
+      "Bash(MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-20.04 -e bash -lc 'cd /mnt/f/deep_agent && /home/clk/anaconda3/envs/stock-agent/bin/python -c \" *)",
+      "Bash(MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-20.04 -e bash -lc 'cd /mnt/f/deep_agent && cat uploads/holdings_index.json 2>/dev/null || echo \"\\(no index file yet\\)\"')",
+      "Bash(MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu-20.04 -e bash -lc 'cd /mnt/f/deep_agent && git status --short')",
+      "Bash(find /c/Users/james/.claude -iname \"SKILL.md\" 2>/dev/null | head -5)",
+      "Read(//c/Users/james/.claude/**)",
+      "Bash(MSYS_NO_PATHCONV=1 find \"/c/Users/james/.claude\" -iname \"*.md\" 2>/dev/null | grep -i skill | head -20)"
+    ]
+  }
+}
