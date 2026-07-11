@@ -58,6 +58,18 @@ SYSTEM_PROMPT = """\
 """
 
 
+# A review can only ever be judged "fake" by the exchange-for-review rule
+# above -- (五星/好評/評論/留言/打卡) paired with (送/換/折/領/贈/抵). Reviews
+# that contain none of the trigger words literally cannot match that rule, so
+# they're skipped before hitting the LLM (cheaper + faster, same verdicts).
+_TRIGGER_TERMS = ("五星", "好評", "評論", "留言", "打卡")
+_EXCHANGE_TERMS = ("送", "換", "折", "領", "贈", "抵")
+
+
+def _needs_llm_check(text: str) -> bool:
+    return any(t in text for t in _TRIGGER_TERMS) and any(t in text for t in _EXCHANGE_TERMS)
+
+
 def _get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
@@ -117,16 +129,22 @@ async def classify_reviews(
     progress_cb: Optional[Callable[[int, int], Awaitable[None]]] = None,
 ) -> list[dict]:
     """
-    Classify every review's text as genuine/suspicious/fake.
-    progress_cb(done_count, total_count) is awaited after each batch finishes.
+    Classify only the reviews that contain a review-for-reward trigger phrase
+    (see _needs_llm_check) -- the one thing this classifier ever judges "fake"
+    on. Reviews with none of those trigger words are dropped entirely rather
+    than kept as "genuine": nobody suspected them in the first place, so
+    counting them would dilute the fake-review ratio computed downstream.
+    progress_cb(done_count, total_count) is awaited after each batch finishes,
+    counted against only the reviews actually sent to the LLM.
     """
-    if not reviews:
+    to_check = [r for r in reviews if _needs_llm_check(r.get("text", ""))]
+    if not to_check:
         return []
 
     batch_size = batch_size or config.CLASSIFY_BATCH_SIZE
     concurrency = concurrency or config.CLASSIFY_CONCURRENCY
 
-    batches = [reviews[i : i + batch_size] for i in range(0, len(reviews), batch_size)]
+    batches = [to_check[i : i + batch_size] for i in range(0, len(to_check), batch_size)]
     semaphore = asyncio.Semaphore(concurrency)
     done = 0
     lock = asyncio.Lock()
@@ -140,7 +158,7 @@ async def classify_reviews(
         async with lock:
             done += len(batch)
             if progress_cb:
-                await progress_cb(done, len(reviews))
+                await progress_cb(done, len(to_check))
 
     await asyncio.gather(*(run_one(i, b) for i, b in enumerate(batches)))
 

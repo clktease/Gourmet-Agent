@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 import config
 import mrt_data
+import report_builder
 import serpapi_client
 from pipeline import analyze_business, analyze_multiple
 from serpapi_client import SerpApiError
@@ -72,6 +73,7 @@ async def mrt_nearby(
     max_rating: float = 5.0,
     limit: int = 10,
     keyword: str = "美食",
+    radius_km: float = 1.0,
 ):
     missing = config.missing_keys()
     if missing:
@@ -79,7 +81,7 @@ async def mrt_nearby(
     try:
         coords = await asyncio.to_thread(serpapi_client.resolve_station_coordinates, station)
         places = await asyncio.to_thread(
-            serpapi_client.search_nearby_food, coords["lat"], coords["lng"], keyword
+            serpapi_client.search_nearby_food, coords["lat"], coords["lng"], keyword, 16, radius_km
         )
     except SerpApiError as e:
         return JSONResponse({"error": str(e)}, status_code=502)
@@ -122,6 +124,14 @@ async def ws_analyze(websocket: WebSocket):
         pass
 
 
+@app.get("/api/mrt/report")
+async def mrt_report(station: str):
+    report = report_builder.load_report(station)
+    if not report:
+        return JSONResponse({"error": f"尚無「{station}」的已存檔報告"}, status_code=404)
+    return report
+
+
 @app.websocket("/ws/analyze_batch")
 async def ws_analyze_batch(websocket: WebSocket):
     await websocket.accept()
@@ -133,7 +143,20 @@ async def ws_analyze_batch(websocket: WebSocket):
             return
 
         places = req.get("places") or []
-        businesses = [{"title": p.get("title", ""), "data_id": p.get("data_id")} for p in places if p.get("data_id")]
+        station = (req.get("station") or "").strip() or None
+        businesses = [
+            {
+                "title": p.get("title", ""),
+                "data_id": p.get("data_id"),
+                "address": p.get("address"),
+                "rating": p.get("rating"),
+                "type": p.get("type"),
+                "price": p.get("price"),
+                "thumbnail": p.get("thumbnail"),
+            }
+            for p in places
+            if p.get("data_id")
+        ]
         max_reviews = int(req.get("max_reviews") or config.MAX_REVIEWS_DEFAULT)
 
         if not businesses:
@@ -145,6 +168,9 @@ async def ws_analyze_batch(websocket: WebSocket):
 
         try:
             report = await analyze_multiple(businesses, max_reviews, progress_cb=progress_cb)
+            if station:
+                await websocket.send_json({"stage": "saving_report", "message": "整理報告並產生 LLM 結論中..."})
+                report = await report_builder.build_and_save_report(station, report)
             await websocket.send_json({"stage": "batch_result", "data": report})
         except Exception as e:
             await websocket.send_json({"stage": "error", "message": str(e)})

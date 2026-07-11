@@ -73,6 +73,13 @@ async def analyze_business(
         )
 
     classified = await classify_reviews(reviews, progress_cb=on_classify_progress)
+    await _emit(
+        progress_cb,
+        {
+            "stage": "filter_done",
+            "message": f"{len(reviews)} 則評論中，{len(classified)} 則含可疑關鍵字送 AI 判讀（其餘略過）",
+        },
+    )
 
     summary = _summarize(classified)
     await _emit(progress_cb, {"stage": "done", "message": "分析完成", "summary": summary})
@@ -115,9 +122,21 @@ async def analyze_multiple(
             await _emit(progress_cb, {**event, "business_index": idx, "business_title": biz.get("title")})
 
         async with semaphore:
-            result = await analyze_business(
-                biz.get("title", ""), max_reviews, biz.get("data_id"), progress_cb=biz_progress_cb
-            )
+            try:
+                result = await analyze_business(
+                    biz.get("title", ""), max_reviews, biz.get("data_id"), progress_cb=biz_progress_cb
+                )
+            except Exception as e:
+                await _emit(
+                    progress_cb,
+                    {
+                        "stage": "business_error",
+                        "business_index": idx,
+                        "business_title": biz.get("title"),
+                        "message": f"分析失敗: {e}",
+                    },
+                )
+                result = None
         results[idx] = result
 
         async with lock:
@@ -135,22 +154,29 @@ async def analyze_multiple(
 
     await asyncio.gather(*(run_one(i, b) for i, b in enumerate(businesses)))
 
-    report = _build_report(results)
+    report = _build_report(results, businesses)
     await _emit(progress_cb, {"stage": "report_done", "report": report})
     return report
 
 
-def _build_report(results: list[dict]) -> dict:
+def _build_report(results: list[Optional[dict]], businesses: list[dict]) -> dict:
     restaurants = []
-    for r in results:
+    failed_titles = []
+    for r, biz in zip(results, businesses):
+        if r is None:
+            failed_titles.append(biz.get("title", ""))
+            continue
         business = r["business"]
         summary = r["summary"]
         restaurants.append(
             {
                 "data_id": business.get("data_id"),
                 "title": business.get("title"),
-                "address": business.get("address"),
-                "google_rating": business.get("rating"),
+                "address": business.get("address") or biz.get("address"),
+                "google_rating": business.get("rating") or biz.get("rating"),
+                "type": biz.get("type") or "其他",
+                "price": biz.get("price"),
+                "thumbnail": biz.get("thumbnail"),
                 "summary": summary,
                 "reviews": r["reviews"],
             }
@@ -175,6 +201,8 @@ def _build_report(results: list[dict]) -> dict:
             "avg_trust_score": avg_trust,
             "flagged_count": len(flagged),
             "flagged_titles": flagged,
+            "failed_count": len(failed_titles),
+            "failed_titles": failed_titles,
         },
     }
 

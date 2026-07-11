@@ -538,6 +538,28 @@
   .report-row-detail { display: none; padding: 4px 16px 14px; border-top: 1px solid var(--hairline); }
   .report-row-detail .review { margin-top: 10px; }
 
+  .report-conclusion {
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 18px;
+    font-size: 13.5px;
+  }
+  .report-conclusion strong { color: var(--accent); }
+  .report-conclusion p { margin: 6px 0 0; line-height: 1.6; color: var(--ink); }
+
+  .category-section { margin: 22px 0 10px; }
+  .category-header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .category-name { font-weight: 800; font-size: 15px; }
+  .category-count { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-faint); }
+  .category-note { font-size: 12.5px; color: var(--ink-dim); margin-bottom: 10px; line-height: 1.6; }
+
   #refresh-btn {
     margin-left: auto;
     font-family: var(--font-mono);
@@ -603,13 +625,15 @@
       <label>最低評分 <input type="number" id="min-rating" value="4.5" min="0" max="5" step="0.1" /></label>
       <label>最高評分 <input type="number" id="max-rating" value="4.9" min="0" max="5" step="0.1" title="4.9~5.0 常見洗評論灌高分，可調低排除" /></label>
       <label>取前 N 間 <input type="number" id="nearby-limit" value="10" min="1" max="30" /></label>
+      <label>搜尋半徑(km) <input type="number" id="nearby-radius" value="1" min="0.1" max="10" step="0.1" title="超過此距離的結果會被過濾掉，避免抓到很遠的同名分店" /></label>
       <button id="nearby-search-btn">搜尋附近美食</button>
+      <button id="load-report-btn" style="background:transparent;border:1px solid var(--accent);color:var(--accent);">載入已存檔報告</button>
     </div>
     <div id="nearby-log"></div>
     <div class="place-list" id="nearby-results"></div>
 
     <div id="batch-report">
-      <h2>📋 洗評論分析報告</h2>
+      <h2>📋 洗評論分析報告 <span style="font-size:11px;color:var(--ink-faint);font-weight:400;">已存檔至該捷運站資料夾，之後可重複使用或新增</span></h2>
       <div class="batch-overview" id="batch-overview"></div>
       <div id="batch-report-body"></div>
     </div>
@@ -619,7 +643,7 @@
 
   <div class="search-bar">
     <input type="text" id="query" placeholder="輸入商家名稱，例如：鼎泰豐 信義店" />
-    <input type="number" id="max_reviews" value="60" min="5" max="300" title="最多抓取幾則評論" />
+    <input type="number" id="max_reviews" value="200" min="5" max="500" title="最多抓取幾則評論（送 AI 判讀前會先篩掉不含可疑關鍵字的評論，所以可以抓多一點）" />
     <button id="analyze-btn">分析</button>
   </div>
 
@@ -745,7 +769,7 @@ function runAnalysis(query, dataId, forceRefresh = false) {
   if (!query && !dataId) return;
   lastQuery = query;
   lastDataId = dataId;
-  const maxReviews = parseInt($("max_reviews").value, 10) || 60;
+  const maxReviews = parseInt($("max_reviews").value, 10) || 200;
 
   resetUI();
   btn.disabled = true;
@@ -877,18 +901,20 @@ function selectStation(name) {
   $("station-name").textContent = name;
   $("nearby-results").innerHTML = "";
   $("nearby-log").textContent = "";
+  $("batch-report").style.display = "none";
   nearbyPlaces = [];
 }
 
 function placeCardHTML(p, lineColor) {
   const rating = p.rating != null ? p.rating.toFixed(1) : "-";
   const bg = p.thumbnail ? `background-image:url('${p.thumbnail}')` : "";
+  const dist = p.distance_km != null ? ` · ${p.distance_km < 1 ? Math.round(p.distance_km * 1000) + "m" : p.distance_km.toFixed(1) + "km"}` : "";
   return `
     <div class="place-card" data-id="${escapeHtml(p.data_id)}" style="--card-line:${lineColor || "var(--accent)"}">
       <div class="place-thumb" style="${bg}"></div>
       <div class="place-title">${escapeHtml(p.title)}</div>
-      <div class="place-meta">⭐ ${rating}（${p.reviews_count ?? 0} 則）${p.price ? " · " + escapeHtml(p.price) : ""}</div>
-      <div class="place-addr">${escapeHtml(p.address || "")}</div>
+      <div class="place-meta">⭐ ${rating}（${p.reviews_count ?? 0} 則）${p.price ? " · " + escapeHtml(p.price) : ""}${dist}</div>
+      <div class="place-addr">${escapeHtml(p.address || "")}${p.type ? " · " + escapeHtml(p.type) : ""}</div>
       <div class="place-status" data-status>⏳ 等待分析</div>
     </div>
   `;
@@ -914,6 +940,7 @@ $("nearby-search-btn").addEventListener("click", async () => {
   const minRating = parseFloat($("min-rating").value) || 0;
   const maxRating = parseFloat($("max-rating").value) || 5;
   const limit = parseInt($("nearby-limit").value, 10) || 10;
+  const radiusKm = parseFloat($("nearby-radius").value) || 1;
   const line = mrtLines.find(l => l.id === selectedLineId);
 
   $("nearby-log").textContent = "搜尋中...";
@@ -921,7 +948,7 @@ $("nearby-search-btn").addEventListener("click", async () => {
   $("batch-report").style.display = "none";
 
   try {
-    const params = new URLSearchParams({ station: selectedStation, min_rating: minRating, max_rating: maxRating, limit });
+    const params = new URLSearchParams({ station: selectedStation, min_rating: minRating, max_rating: maxRating, limit, radius_km: radiusKm });
     const res = await fetch(`/api/mrt/nearby?${params.toString()}`);
     const data = await res.json();
     if (data.error) {
@@ -941,15 +968,36 @@ $("nearby-search-btn").addEventListener("click", async () => {
   }
 });
 
+$("load-report-btn").addEventListener("click", async () => {
+  if (!selectedStation) return;
+  $("nearby-log").textContent = "載入已存檔報告中...";
+  try {
+    const res = await fetch(`/api/mrt/report?station=${encodeURIComponent(selectedStation)}`);
+    const data = await res.json();
+    if (data.error) {
+      $("nearby-log").textContent = "❌ " + data.error;
+      return;
+    }
+    $("nearby-log").textContent = `已載入存檔報告（更新於 ${data.updated_at}）`;
+    renderBatchReport(data);
+  } catch (e) {
+    $("nearby-log").textContent = "❌ 載入失敗: " + e;
+  }
+});
+
 function runBatchAnalysis(places) {
-  const maxReviews = parseInt($("max_reviews").value, 10) || 60;
+  const maxReviews = parseInt($("max_reviews").value, 10) || 200;
   $("nearby-log").textContent = `找到 ${places.length} 間餐廳，開始逐間分析評論...`;
 
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${proto}//${location.host}/ws/analyze_batch`);
 
   ws.onopen = () => ws.send(JSON.stringify({
-    places: places.map(p => ({ title: p.title, data_id: p.data_id })),
+    station: selectedStation,
+    places: places.map(p => ({
+      title: p.title, data_id: p.data_id, address: p.address, rating: p.rating,
+      type: p.type, price: p.price, thumbnail: p.thumbnail,
+    })),
     max_reviews: maxReviews,
   }));
 
@@ -959,6 +1007,10 @@ function runBatchAnalysis(places) {
     if (msg.stage === "error") {
       $("nearby-log").textContent = "❌ " + msg.message;
       return;
+    }
+
+    if (msg.stage === "saving_report") {
+      $("nearby-log").textContent = msg.message;
     }
 
     if (msg.business_index !== undefined) {
@@ -974,6 +1026,8 @@ function runBatchAnalysis(places) {
           const score = msg.summary.trust_score;
           const pct = score != null ? Math.round(score * 100) + "%" : "-";
           updatePlaceStatus(place.data_id, `可信度 ${pct}`, trustClass(score));
+        } else if (msg.stage === "business_error") {
+          updatePlaceStatus(place.data_id, "❌ 分析失敗", "fake");
         }
       }
     }
@@ -1001,8 +1055,30 @@ function renderBatchReport(report) {
     <div class="stat"><div class="num">${ov.total_restaurants}</div><div class="label">分析餐廳數</div></div>
     <div class="stat trust"><div class="num">${ov.avg_trust_score != null ? Math.round(ov.avg_trust_score * 100) + "%" : "-"}</div><div class="label">平均可信度</div></div>
     <div class="stat fake"><div class="num">${ov.flagged_count}</div><div class="label">疑似洗評論店家</div></div>
+    ${ov.failed_count ? `<div class="stat fake"><div class="num">${ov.failed_count}</div><div class="label">分析失敗</div></div>` : ""}
   `;
-  $("batch-report-body").innerHTML = report.restaurants.map(reportRowHTML).join("");
+
+  let body = "";
+  if (report.conclusion) {
+    body += `<div class="report-conclusion">🤖 <strong>整體結論</strong><p>${escapeHtml(report.conclusion)}</p></div>`;
+  }
+
+  if (Array.isArray(report.categories) && report.categories.length) {
+    body += report.categories.map(cat => `
+      <div class="category-section">
+        <div class="category-header">
+          <span class="category-name">${escapeHtml(cat.name)}</span>
+          <span class="category-count">${cat.count} 間</span>
+        </div>
+        ${(cat.intro || cat.evaluation) ? `<div class="category-note">${escapeHtml(cat.intro || "")}${cat.intro && cat.evaluation ? " " : ""}${escapeHtml(cat.evaluation || "")}</div>` : ""}
+        ${cat.restaurants.map(reportRowHTML).join("")}
+      </div>
+    `).join("");
+  } else {
+    body += (report.restaurants || []).map(reportRowHTML).join("");
+  }
+
+  $("batch-report-body").innerHTML = body;
   $("batch-report-body").querySelectorAll(".report-row-toggle").forEach(el => {
     el.addEventListener("click", () => {
       const detail = el.parentElement.querySelector(".report-row-detail");

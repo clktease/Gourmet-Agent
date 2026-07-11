@@ -15,7 +15,11 @@ CLASSIFY_BATCH_SIZE = int(os.getenv("CLASSIFY_BATCH_SIZE", "10"))
 CLASSIFY_CONCURRENCY = int(os.getenv("CLASSIFY_CONCURRENCY", "3"))
 # How many restaurants to analyze in parallel in a batch report
 BUSINESS_CONCURRENCY = int(os.getenv("BUSINESS_CONCURRENCY", "2"))
-MAX_REVIEWS_DEFAULT = int(os.getenv("MAX_REVIEWS_DEFAULT", "100"))
+MAX_REVIEWS_DEFAULT = int(os.getenv("MAX_REVIEWS_DEFAULT", "200"))
+# Minimum gap enforced between any two outgoing SerpAPI requests (across all
+# threads/businesses), and how many times a 429 is retried before giving up.
+SERP_MIN_INTERVAL_SEC = float(os.getenv("SERP_MIN_INTERVAL_SEC", "0.6"))
+SERP_MAX_RETRIES = int(os.getenv("SERP_MAX_RETRIES", "5"))
 
 
 def missing_keys() -> list[str]:
